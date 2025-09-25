@@ -101,7 +101,7 @@ twammHook.executePendingOrders(poolKey);
 1. **Clone the repository**
 
 ```bash
-git clone [<repository-url>](https://github.com/OFUZORCHUKWUEMEKE/Time-Weighted-Average-Market-Maker)
+git clone https://github.com/OFUZORCHUKWUEMEKE/Time-Weighted-Average-Market-Maker
 cd Time-Weighted-Average-Market-Maker
 ```
 

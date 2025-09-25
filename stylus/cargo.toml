@@ -1,0 +1,25 @@
+[package]
+name = "twamm-calculator"
+version = "0.1.0"
+edition = "2021"
+authors = ["Your Name <your.email@example.com>"]
+description = "Time-Weighted Average Market Maker Calculator for Stylus"
+license = "MIT"
+repository = "https://github.com/your-username/Time-Weighted-Average-Market-Maker"
+
+[features]
+export-abi = []
+
+[dependencies]
+# Using a basic approach without Stylus for now
+# This demonstrates the mathematical concepts
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+
+[profile.dev]
+opt-level = 0
+debug = true

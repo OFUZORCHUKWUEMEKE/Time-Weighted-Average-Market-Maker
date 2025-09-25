@@ -1,10 +1,9 @@
+use crate::twamm_math::{MathError, TWAMMath};
+use alloc::vec::Vec;
 use stylus_sdk::{
-    alloy_primitives::{U256, Address},
-    storage::{StorageMap, StorageU256, StorageAddress},
+    alloy_primitives::{Address, U256},
     console,
 };
-use alloc::{vec::Vec, string::String};
-use crate::twamm_math::{TWAMMath, MathError};
 
 /// Order execution logic for TWAMM
 /// Handles long-term orders, virtual order processing, and execution scheduling
@@ -121,7 +120,8 @@ impl OrderPool {
         }
 
         // Calculate sell rate
-        let sell_rate = sell_amount.checked_div(duration_blocks)
+        let sell_rate = sell_amount
+            .checked_div(duration_blocks)
             .ok_or(b"Division overflow".to_vec())?;
 
         let order = Order {
@@ -132,7 +132,8 @@ impl OrderPool {
             sell_rate,
             remaining_amount: sell_amount,
             start_block: current_block,
-            end_block: current_block.checked_add(duration_blocks)
+            end_block: current_block
+                .checked_add(duration_blocks)
                 .ok_or(b"Block overflow".to_vec())?,
             last_virtual_order_block: current_block,
             accumulated_out: U256::ZERO,
@@ -143,29 +144,38 @@ impl OrderPool {
         // Update total sell rates
         match direction {
             OrderDirection::SellToken0 => {
-                self.total_sell_rate_0 = self.total_sell_rate_0
+                self.total_sell_rate_0 = self
+                    .total_sell_rate_0
                     .checked_add(sell_rate)
                     .ok_or(b"Rate overflow".to_vec())?;
             }
             OrderDirection::SellToken1 => {
-                self.total_sell_rate_1 = self.total_sell_rate_1
+                self.total_sell_rate_1 = self
+                    .total_sell_rate_1
                     .checked_add(sell_rate)
                     .ok_or(b"Rate overflow".to_vec())?;
             }
         }
 
         let order_id = self.next_order_id;
-        self.next_order_id = self.next_order_id
+        self.next_order_id = self
+            .next_order_id
             .checked_add(U256::from(1u32))
             .ok_or(b"Order ID overflow".to_vec())?;
 
-        console!("Created long-term order {} for {} blocks", order_id, duration_blocks);
+        console!(
+            "Created long-term order {} for {} blocks",
+            order_id,
+            duration_blocks
+        );
         Ok(order_id)
     }
 
     /// Cancel an existing order
     pub fn cancel_order(&mut self, order_id: U256, caller: Address) -> Result<Order, Vec<u8>> {
-        let order_index = self.orders.iter()
+        let order_index = self
+            .orders
+            .iter()
             .position(|order| order.id == order_id)
             .ok_or(b"Order not found".to_vec())?;
 
@@ -179,12 +189,14 @@ impl OrderPool {
         // Update total sell rates
         match order.direction {
             OrderDirection::SellToken0 => {
-                self.total_sell_rate_0 = self.total_sell_rate_0
+                self.total_sell_rate_0 = self
+                    .total_sell_rate_0
                     .checked_sub(order.sell_rate)
                     .ok_or(b"Rate underflow".to_vec())?;
             }
             OrderDirection::SellToken1 => {
-                self.total_sell_rate_1 = self.total_sell_rate_1
+                self.total_sell_rate_1 = self
+                    .total_sell_rate_1
                     .checked_sub(order.sell_rate)
                     .ok_or(b"Rate underflow".to_vec())?;
             }
@@ -205,7 +217,7 @@ impl OrderPool {
         current_reserve_1: U256,
     ) -> Result<VirtualExecutionResult, Vec<u8>> {
         let last_block = self.virtual_order_state.last_virtual_order_block;
-        
+
         if current_block <= last_block {
             // No execution needed
             return Ok(VirtualExecutionResult {
@@ -220,24 +232,24 @@ impl OrderPool {
             });
         }
 
-        let blocks_elapsed = current_block.checked_sub(last_block)
+        let blocks_elapsed = current_block
+            .checked_sub(last_block)
             .ok_or(b"Block calculation error".to_vec())?;
 
         // Get active sell rates at the time of execution
-        let (active_sell_rate_0, active_sell_rate_1) = self.get_active_sell_rates(
-            last_block,
-            current_block,
-        )?;
+        let (active_sell_rate_0, active_sell_rate_1) =
+            self.get_active_sell_rates(last_block, current_block)?;
 
         // Use closed-form solution to calculate virtual order execution
-        let (new_reserve_0, new_reserve_1, amount_0_received, amount_1_received) = 
+        let (new_reserve_0, new_reserve_1, amount_0_received, amount_1_received) =
             TWAMMath::execute_virtual_orders_closed_form(
                 active_sell_rate_0,
                 active_sell_rate_1,
                 blocks_elapsed,
                 current_reserve_0,
                 current_reserve_1,
-            ).map_err(|e| match e {
+            )
+            .map_err(|e| match e {
                 MathError::Overflow => b"Math overflow in virtual execution".to_vec(),
                 MathError::DivisionByZero => b"Division by zero in virtual execution".to_vec(),
                 MathError::InvalidInput => b"Invalid input for virtual execution".to_vec(),
@@ -255,13 +267,16 @@ impl OrderPool {
         // Update virtual order state
         self.virtual_order_state.last_virtual_order_block = current_block;
 
-        let amount_0_sold = active_sell_rate_0.checked_mul(blocks_elapsed)
+        let amount_0_sold = active_sell_rate_0
+            .checked_mul(blocks_elapsed)
             .ok_or(b"Calculation overflow".to_vec())?;
-        let amount_1_sold = active_sell_rate_1.checked_mul(blocks_elapsed)
+        let amount_1_sold = active_sell_rate_1
+            .checked_mul(blocks_elapsed)
             .ok_or(b"Calculation overflow".to_vec())?;
 
         // Estimate gas used (approximation based on blocks executed)
-        let gas_estimate = blocks_elapsed.checked_mul(U256::from(21000u32))
+        let gas_estimate = blocks_elapsed
+            .checked_mul(U256::from(21000u32))
             .ok_or(b"Gas calculation overflow".to_vec())?;
 
         console!("Executed virtual orders for {} blocks", blocks_elapsed);
@@ -300,15 +315,17 @@ impl OrderPool {
             // Calculate the effective rate for this time period
             let effective_start = order.start_block.max(start_block);
             let effective_end = order.end_block.min(end_block);
-            
+
             if effective_end > effective_start {
                 match order.direction {
                     OrderDirection::SellToken0 => {
-                        total_rate_0 = total_rate_0.checked_add(order.sell_rate)
+                        total_rate_0 = total_rate_0
+                            .checked_add(order.sell_rate)
                             .ok_or(b"Rate calculation overflow".to_vec())?;
                     }
                     OrderDirection::SellToken1 => {
-                        total_rate_1 = total_rate_1.checked_add(order.sell_rate)
+                        total_rate_1 = total_rate_1
+                            .checked_add(order.sell_rate)
                             .ok_or(b"Rate calculation overflow".to_vec())?;
                     }
                 }
@@ -340,10 +357,13 @@ impl OrderPool {
             }
 
             // Update order state
-            let amount_sold = order.sell_rate.checked_mul(blocks_elapsed)
+            let amount_sold = order
+                .sell_rate
+                .checked_mul(blocks_elapsed)
                 .ok_or(b"Amount calculation overflow".to_vec())?;
 
-            order.remaining_amount = order.remaining_amount
+            order.remaining_amount = order
+                .remaining_amount
                 .checked_sub(amount_sold.min(order.remaining_amount))
                 .unwrap_or(U256::ZERO);
 
@@ -352,7 +372,8 @@ impl OrderPool {
                 OrderDirection::SellToken0 => {
                     // This order sold token0, received token1
                     if self.total_sell_rate_0 > U256::ZERO {
-                        amount_1_received.checked_mul(order.sell_rate)
+                        amount_1_received
+                            .checked_mul(order.sell_rate)
                             .ok_or(b"Distribution calculation overflow".to_vec())?
                             .checked_div(self.total_sell_rate_0)
                             .ok_or(b"Distribution division error".to_vec())?
@@ -363,7 +384,8 @@ impl OrderPool {
                 OrderDirection::SellToken1 => {
                     // This order sold token1, received token0
                     if self.total_sell_rate_1 > U256::ZERO {
-                        amount_0_received.checked_mul(order.sell_rate)
+                        amount_0_received
+                            .checked_mul(order.sell_rate)
                             .ok_or(b"Distribution calculation overflow".to_vec())?
                             .checked_div(self.total_sell_rate_1)
                             .ok_or(b"Distribution division error".to_vec())?
@@ -373,7 +395,9 @@ impl OrderPool {
                 }
             };
 
-            order.accumulated_out = order.accumulated_out.checked_add(received_amount)
+            order.accumulated_out = order
+                .accumulated_out
+                .checked_add(received_amount)
                 .ok_or(b"Accumulated amount overflow".to_vec())?;
 
             order.last_virtual_order_block = current_block;
@@ -387,16 +411,18 @@ impl OrderPool {
         // Remove completed orders (in reverse order to maintain indices)
         for &index in orders_to_remove.iter().rev() {
             let completed_order = self.orders.remove(index);
-            
+
             // Update total sell rates
             match completed_order.direction {
                 OrderDirection::SellToken0 => {
-                    self.total_sell_rate_0 = self.total_sell_rate_0
+                    self.total_sell_rate_0 = self
+                        .total_sell_rate_0
                         .checked_sub(completed_order.sell_rate)
                         .unwrap_or(U256::ZERO);
                 }
                 OrderDirection::SellToken1 => {
-                    self.total_sell_rate_1 = self.total_sell_rate_1
+                    self.total_sell_rate_1 = self
+                        .total_sell_rate_1
                         .checked_sub(completed_order.sell_rate)
                         .unwrap_or(U256::ZERO);
                 }
@@ -410,14 +436,16 @@ impl OrderPool {
 
     /// Get order details by ID
     pub fn get_order(&self, order_id: U256) -> Option<Order> {
-        self.orders.iter()
+        self.orders
+            .iter()
             .find(|order| order.id == order_id)
             .copied()
     }
 
     /// Get all orders for a specific owner
     pub fn get_orders_by_owner(&self, owner: Address) -> Vec<Order> {
-        self.orders.iter()
+        self.orders
+            .iter()
             .filter(|order| order.owner == owner)
             .copied()
             .collect()
@@ -458,20 +486,19 @@ impl OrderPool {
     }
 
     /// Estimate gas cost for virtual order execution
-    pub fn estimate_virtual_execution_gas(
-        &self,
-        current_block: U256,
-    ) -> U256 {
+    pub fn estimate_virtual_execution_gas(&self, current_block: U256) -> U256 {
         let blocks_since_last = current_block
             .checked_sub(self.virtual_order_state.last_virtual_order_block)
             .unwrap_or(U256::ZERO);
 
         // Base gas cost for virtual execution
         let base_gas = U256::from(50000u32);
-        
+
         // Additional gas per block of execution
         let per_block_gas = U256::from(1000u32);
-        let blocks_gas = blocks_since_last.checked_mul(per_block_gas).unwrap_or(U256::ZERO);
+        let blocks_gas = blocks_since_last
+            .checked_mul(per_block_gas)
+            .unwrap_or(U256::ZERO);
 
         // Additional gas per active order
         let per_order_gas = U256::from(5000u32);
@@ -479,7 +506,8 @@ impl OrderPool {
             .checked_mul(per_order_gas)
             .unwrap_or(U256::ZERO);
 
-        base_gas.checked_add(blocks_gas)
+        base_gas
+            .checked_add(blocks_gas)
             .unwrap_or(U256::MAX)
             .checked_add(orders_gas)
             .unwrap_or(U256::MAX)
@@ -501,18 +529,32 @@ impl OrderPool {
 
             match order.direction {
                 OrderDirection::SellToken0 => {
-                    let executed_amount = order.sell_rate
-                        .checked_mul(current_block.checked_sub(order.start_block).unwrap_or(U256::ZERO))
+                    let executed_amount = order
+                        .sell_rate
+                        .checked_mul(
+                            current_block
+                                .checked_sub(order.start_block)
+                                .unwrap_or(U256::ZERO),
+                        )
                         .unwrap_or(U256::ZERO)
                         .min(order.remaining_amount);
-                    total_volume_0 = total_volume_0.checked_add(executed_amount).unwrap_or(total_volume_0);
+                    total_volume_0 = total_volume_0
+                        .checked_add(executed_amount)
+                        .unwrap_or(total_volume_0);
                 }
                 OrderDirection::SellToken1 => {
-                    let executed_amount = order.sell_rate
-                        .checked_mul(current_block.checked_sub(order.start_block).unwrap_or(U256::ZERO))
+                    let executed_amount = order
+                        .sell_rate
+                        .checked_mul(
+                            current_block
+                                .checked_sub(order.start_block)
+                                .unwrap_or(U256::ZERO),
+                        )
                         .unwrap_or(U256::ZERO)
                         .min(order.remaining_amount);
-                    total_volume_1 = total_volume_1.checked_add(executed_amount).unwrap_or(total_volume_1);
+                    total_volume_1 = total_volume_1
+                        .checked_add(executed_amount)
+                        .unwrap_or(total_volume_1);
                 }
             }
         }
@@ -552,8 +594,9 @@ impl OrderManager {
     ) -> U256 {
         // Assume ~6000 blocks per day (15 second block times)
         let blocks_per_day = U256::from(6000u32);
-        
-        let optimal_interval = blocks_per_day.checked_div(execution_frequency_target)
+
+        let optimal_interval = blocks_per_day
+            .checked_div(execution_frequency_target)
             .unwrap_or(U256::from(100u32)) // Default fallback
             .max(U256::from(10u32)) // Minimum interval
             .min(U256::from(1000u32)); // Maximum interval
@@ -584,7 +627,8 @@ impl OrderManager {
         }
 
         // Check if sell amount is reasonable relative to current reserves
-        let max_reasonable_amount = current_reserve.checked_div(U256::from(10u32))
+        let max_reasonable_amount = current_reserve
+            .checked_div(U256::from(10u32))
             .unwrap_or(U256::ZERO); // Max 10% of reserves
 
         if sell_amount > max_reasonable_amount && current_reserve > U256::ZERO {
@@ -605,7 +649,8 @@ impl OrderManager {
             return Err(b"Invalid duration".to_vec());
         }
 
-        let sell_rate = sell_amount.checked_div(duration_blocks)
+        let sell_rate = sell_amount
+            .checked_div(duration_blocks)
             .ok_or(b"Rate calculation error".to_vec())?;
 
         // Calculate impact using TWAMM math
@@ -614,10 +659,12 @@ impl OrderManager {
             duration_blocks,
             reserve_in,
             reserve_out,
-        ).map_err(|_| b"Impact calculation failed".to_vec())?;
+        )
+        .map_err(|_| b"Impact calculation failed".to_vec())?;
 
         // Convert to basis points (impact relative to expected amount)
-        let expected_out = sell_amount.checked_mul(reserve_out)
+        let expected_out = sell_amount
+            .checked_mul(reserve_out)
             .ok_or(b"Expected calculation overflow".to_vec())?
             .checked_div(reserve_in)
             .ok_or(b"Expected calculation division error".to_vec())?;
@@ -626,7 +673,8 @@ impl OrderManager {
             return Ok(U256::ZERO);
         }
 
-        let price_impact = expected_out.checked_sub(impact)
+        let price_impact = expected_out
+            .checked_sub(impact)
             .ok_or(b"Price impact calculation error".to_vec())?
             .checked_mul(U256::from(10000u32))
             .ok_or(b"Basis points calculation overflow".to_vec())?
