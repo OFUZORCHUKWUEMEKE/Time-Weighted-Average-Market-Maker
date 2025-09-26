@@ -11,8 +11,8 @@ repository = "https://github.com/your-username/Time-Weighted-Average-Market-Make
 export-abi = []
 
 [dependencies]
-# Using a basic approach without Stylus for now
-# This demonstrates the mathematical concepts
+stylus-sdk = "0.6.0"
+
 
 [profile.release]
 opt-level = 3

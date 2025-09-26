@@ -6,6 +6,17 @@ A sophisticated implementation of a Time-Weighted Average Market Maker built on 
 
 TWAMM (Time-Weighted Average Market Maker) is an advanced AMM mechanism that allows users to place long-term orders that execute gradually over time, reducing price impact and providing better execution for large trades. This implementation leverages Stylus for gas-efficient mathematical computations while maintaining compatibility with Uniswap V4's hook system.
 
+## 📍 Deployed Contract
+
+**Contract Address**: `0x3409488afe731fb8e270251f267e1a822f774ec9`  
+**Network**: Arbitrum Sepolia  
+**Deployment TX**: `0x5dfb3ded0423130d63522661d96ca145771c896e8edec62fe53e760cc6660151`  
+**Activation TX**: `0x79a2c0b042ce319a6837fc15921a38edf82c7a661565dab553510bdf7a473438`  
+**Contract Size**: 16.4 KiB (16,776 bytes)  
+**WASM Size**: 62.0 KiB (63,467 bytes)
+
+> **Note**: This is the comprehensive TWAMM contract with full mathematical utilities and order execution system. Deployed on Arbitrum Sepolia testnet. For mainnet deployment, additional security audits and testing are recommended.
+
 ## ✨ Key Features
 
 - **Time-Weighted Execution**: Orders execute gradually over specified time periods
@@ -27,11 +38,12 @@ TWAMM (Time-Weighted Average Market Maker) is an advanced AMM mechanism that all
 - **TWAMMStorage.sol**: Storage contract managing orders and pool states
 - **VirtualOrderExecutor.sol**: Library for executing virtual orders safely
 
-#### 2. Stylus Contract (`/stylus/`)
+#### 2. Stylus Contract (`/tmm/`)
 
-- **lib.rs**: Main Stylus contract with TWAMM calculation logic
-- **twamm_math.rs**: Advanced mathematical utilities and TWAMM formulas
-- **order_execution.rs**: Order management and execution logic
+- **lib.rs**: Main Stylus contract with comprehensive TWAMM functionality
+- **twamm_math.rs**: Advanced mathematical utilities and TWAMM formulas (695 lines)
+- **order_execution.rs**: Complete order management and execution system (687 lines)
+- **main.rs**: Contract entry point and ABI export functionality
 
 ### Mathematical Model
 
@@ -59,32 +71,80 @@ The implementation uses Paradigm's TWAMM research with closed-form solutions for
 - **Gas Estimation**: Built-in gas cost calculation
 - **Execution Intervals**: Configurable execution frequency
 
-## 📋 Usage
+## 📋 Contract Functions
 
-### Submitting an Order
+### Core TWAMM Functions
 
 ```solidity
-// Submit a long-term order
-uint256 orderId = twammHook.submitOrder{value: executionReward}(
-    poolKey,      // Pool to trade in
-    amount,       // Total amount to sell
-    zeroForOne,   // Direction (true = token0→token1)
-    blocks        // Duration in blocks
-);
+// Calculate virtual trades for TWAMM
+function calculateVirtualTrades(
+    uint256 sellRate0,
+    uint256 sellRate1,
+    uint256 blocksElapsed,
+    uint256 reserve0,
+    uint256 reserve1
+) external returns (uint256 amount0Out, uint256 amount1Out);
+
+// Execute virtual orders with advanced math
+function executeVirtualOrders(
+    uint256 poolReserve0,
+    uint256 poolReserve1,
+    uint256 sellRate0,
+    uint256 sellRate1,
+    uint256 blocksElapsed
+) external returns (uint256 amount0Out, uint256 amount1Out);
+
+// Calculate price impact
+function calculatePriceImpact(
+    uint256 tradeSize,
+    uint256 reserveIn,
+    uint256 reserveOut
+) external pure returns (uint256 impact);
+
+// Advanced price impact with time weighting
+function calculateAdvancedPriceImpact(
+    uint256 tradeSize,
+    uint256 reserveIn,
+    uint256 reserveOut,
+    uint256 timeWeightingFactor
+) external pure returns (uint256 weightedImpact);
 ```
 
-### Canceling an Order
+### Order Management Functions
 
 ```solidity
-// Cancel an existing order
-twammHook.cancelOrder(orderId);
+// Create a new long-term order
+function createLongTermOrder(
+    address owner,
+    uint8 direction,    // 0 = SellToken0, 1 = SellToken1
+    uint256 sellRate,
+    uint256 blocks,
+    uint256 currentBlock
+) external returns (uint256 orderId);
+
+// Get order statistics
+function getTotalOrdersCreated() external view returns (uint256);
+function getTotalOrdersExecuted() external view returns (uint256);
+function getNextOrderId() external view returns (uint256);
 ```
 
-### Executing Virtual Orders
+### Quality and Statistics Functions
 
 ```solidity
-// Execute pending virtual orders (anyone can call)
-twammHook.executePendingOrders(poolKey);
+// Calculate execution quality score (0-100)
+function calculateExecutionQuality(
+    uint256 expectedAmount,
+    uint256 actualAmount,
+    uint256 priceImpact
+) external pure returns (uint256 score);
+
+// Get comprehensive statistics
+function getTotalCalculations() external view returns (uint256);
+function getTotalVolumeProcessed() external view returns (uint256);
+function getTotalFeesCollected() external view returns (uint256);
+
+// Reset all statistics
+function resetStatistics() external;
 ```
 
 ## 🛠️ Development Setup
@@ -102,7 +162,7 @@ twammHook.executePendingOrders(poolKey);
 
 ```bash
 git clone https://github.com/OFUZORCHUKWUEMEKE/Time-Weighted-Average-Market-Maker
-cd Time-Weighted-Average-Market-Maker
+cd Time-Weighted-Average-Market-Maker/twamm
 ```
 
 2. **Install dependencies**
@@ -112,7 +172,7 @@ cd Time-Weighted-Average-Market-Maker
 forge install
 
 # Install Stylus dependencies
-cd stylus
+cd tmm
 cargo build
 ```
 
@@ -123,7 +183,7 @@ cargo build
 forge build
 
 # Build Stylus contracts
-cd stylus
+cd tmm
 cargo stylus build
 ```
 
@@ -134,8 +194,25 @@ cargo stylus build
 forge test
 
 # Run Stylus tests
-cd stylus
+cd tmm
 cargo test
+
+# Run comprehensive test suite
+cargo test -- --nocapture
+```
+
+### Deployment
+
+```bash
+# Deploy to Arbitrum Sepolia
+cd tmm
+cargo stylus deploy \
+  --endpoint='https://arbitrum-sepolia.infura.io/v3/YOUR_INFURA_KEY' \
+  --private-key="YOUR_PRIVATE_KEY" \
+  --no-verify
+
+# Cache contract for cheaper calls
+cargo stylus cache bid 3409488afe731fb8e270251f267e1a822f774ec9 0
 ```
 
 ## 📊 Mathematical Implementation
@@ -172,6 +249,20 @@ For opposing orders, the system calculates net flows:
 net_flow = max(sell_0_value_in_1 - sell_1, sell_1 - sell_0_value_in_1)
 ```
 
+### Advanced Mathematical Functions
+
+The deployed contract includes comprehensive mathematical utilities:
+
+- **Square Root**: Newton's method with high precision
+- **Exponential Functions**: Taylor series expansion
+- **Logarithmic Functions**: Newton's method implementation
+- **Power Calculations**: Efficient exponentiation
+- **Compound Interest**: Time-weighted calculations
+- **TWAP Calculations**: Time-weighted average price
+- **MEV Protection Scoring**: Front-running protection metrics
+- **Gas Cost Estimation**: Execution cost prediction
+- **Time Decay Factors**: Order aging calculations
+
 ## 🔒 Security Features
 
 - **Reentrancy Protection**: All external functions protected
@@ -194,6 +285,19 @@ net_flow = max(sell_0_value_in_1 - sell_1, sell_1 - sell_0_value_in_1)
 - **Base Gas**: ~100,000 gas for virtual execution
 - **Per Block**: ~1,000 additional gas per block executed
 - **Per Order**: ~5,000 additional gas per active order
+- **Stylus Optimization**: Complex math operations in Rust for gas efficiency
+- **Contract Size**: 16.4 KiB optimized for deployment
+
+### Contract Capabilities
+
+The deployed contract provides:
+
+- **40+ Mathematical Functions**: Comprehensive TWAMM calculations
+- **Order Management System**: Complete order lifecycle management
+- **Quality Scoring**: 0-100 execution quality metrics
+- **Statistics Tracking**: Real-time performance monitoring
+- **MEV Protection**: Front-running protection mechanisms
+- **Gas Optimization**: Efficient execution with minimal costs
 
 ## 🚨 Risk Considerations
 
